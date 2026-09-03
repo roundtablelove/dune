@@ -1,50 +1,67 @@
-# Build the Nix flake from a Nix Seed.
-#
-# This is the `nix-build` job of workflow.yml with the Nix installation
-# swapped for the nix-seed action. Rather than installing Nix and
-# pulling store paths from a binary cache as the build discovers it
-# needs them, the action mounts a seed -- one blob, one mount, no
-# extraction -- containing the whole build closure, and hands the store
-# to the runner user. `nix build` then finds everything already present,
-# with no substituters configured.
-#
-# The seed itself is produced by Seed (.github/workflows/seed.yaml).
-name: Seed Build
+name: Binaries (Nix Seed)
 
 on:
   push:
     branches:
       - main
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload built binaries as artifacts
+        type: boolean
+        default: false
 
-permissions:
-  contents: read
+concurrency:
+  group: ${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  publish:
-    name: Build Flake
-    runs-on: ${{ matrix.os }}
+  binary:
+    name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
-          - ubuntu-latest
-    permissions:
-      contents: read
-      # OIDC for the registry, and read access to the seed package
-      id-token: write
-      packages: read
+        # `name` follows the LLVM/Rust target-triple convention
+        # (`<arch>-<vendor>-<sys>-<abi>`). For Windows, `-gnu` denotes the
+        # MinGW (GNU) ABI, as opposed to `-msvc`.
+        include:
+          - os: macos-26-intel
+            name: x86_64-apple-darwin
+            installable: .#dune
+          - os: macos-26
+            name: aarch64-apple-darwin
+            installable: .#dune
+          - os: ubuntu-26.04
+            name: x86_64-unknown-linux-musl
+            installable: .#dune-static
+          - os: ubuntu-26.04
+            name: x86_64-pc-windows-gnu
+            installable: .#windows-static
+            binary: dune.exe
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v7
-
-      # replaces `nixbuild/nix-quick-install-action`: setup only -- mounts
-      # the seed as /nix/store and puts the seeded nix on PATH. no Nix
-      # installation, no cache authentication, no token.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # for git describe
       - name: Mount seed
         uses: roundtablelove/nix-seed@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build nix flake
-        run: nix build -L
+      - run: echo "(version $(git describe --always --dirty --abbrev=7))" >> dune-project
+      - run: nix build ${{ matrix.installable }}
+      - if: ${{ inputs.upload }}
+        uses: actions/upload-artifact@v7
+        with:
+          path: result/bin/${{ matrix.binary || 'dune' }}
+          name: dune-${{ matrix.name }}
+  combine:
+    if: ${{ inputs.upload }}
+    runs-on: ubuntu-latest
+    needs: binary
+    steps:
+      - uses: actions/upload-artifact/merge@v7
+        with:
+          separate-directories: true
