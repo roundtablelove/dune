@@ -4,6 +4,10 @@
       url = "github:melange-re/melange/v7-55";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-seed = {
+      url = "github:roundtablelove/nix-seed";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nixpkgs.url = "github:nix-ocaml/nix-overlays";
     ocaml-trunk = {
       url = "github:ocaml/ocaml/trunk";
@@ -24,6 +28,7 @@
     {
       self,
       melange,
+      nix-seed,
       nixpkgs,
       ocaml-trunk,
       revdeps-dune,
@@ -155,6 +160,19 @@
             dune = default;
             dune-trunk = dune-trunk-package.default;
             dune-static = musl-static;
+          }
+          # The Nix Seed: a squashfs (Linux) or disk image (macOS) of the
+          # build closure of `dune`, which CI mounts as /nix/store and builds
+          # against offline. Only `dune` is harvested: the cross, trunk and
+          # devShell closures are not what `nix build` needs. mkSeed supports
+          # Linux and Darwin only and throws elsewhere, so expose it only
+          # where it can be built -- flakeExposed also lists freebsd, i686
+          # and friends.
+          // pkgs.lib.optionalAttrs (pkgs.stdenv.isLinux || pkgs.stdenv.isDarwin) {
+            seed = nix-seed.lib.mkSeed {
+              inherit pkgs self;
+              selfFilterName = name: name == "dune";
+            };
           }
         )
         // {
