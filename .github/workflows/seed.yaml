@@ -1,0 +1,55 @@
+# Build the Nix Seed and push it to ghcr, then commit the digest.
+#
+# The seed is a squashfs (Linux) or disk image (macOS) of the build
+# closure of `dune`. Seed Build mounts it as /nix/store and builds
+# against it with no substituters and nothing to fetch.
+#
+# Seeding is the slow half and only needs redoing when the closure
+# changes -- a nixpkgs bump, a toolchain change -- not on every commit,
+# which is why this watches the files that decide the closure rather
+# than running on every push.
+name: Seed
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - flake.nix
+      - flake.lock
+      - nix/**
+      - .github/workflows/seed.yaml
+
+jobs:
+  seed:
+    name: Build Seed
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # one platform failing should not hide the other's result
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+    permissions:
+      # the digest is committed back to .seed.lock
+      contents: write
+      id-token: write
+      packages: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+
+      - name: Build and push seed
+        uses: roundtablelove/nix-seed/seed@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Seeding is the one place a binary cache still earns its
+          # keep: it builds the closure that consumers then get offline.
+          # These are the values flake.nix already declares in nixConfig,
+          # which Nix ignores unless the user is trusted -- so pass them
+          # explicitly. nix-overlays' OCaml is not on cache.nixos.org.
+          nix_conf: |
+            extra-substituters = https://anmonteiro.nix-cache.workers.dev
+            extra-trusted-public-keys = ocaml.nix-cache.com-1:/xI2h2+56rwFfKyyFVbkJSeGqSIYMC/Je+7XXqGKDIY=
