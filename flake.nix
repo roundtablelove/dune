@@ -162,16 +162,22 @@
             dune-static = musl-static;
           }
           # The Nix Seed: a squashfs (Linux) or disk image (macOS) of the
-          # build closure of `dune`, which CI mounts as /nix/store and builds
-          # against offline. Only `dune` is harvested: the cross, trunk and
-          # devShell closures are not what `nix build` needs. mkSeed supports
-          # Linux and Darwin only and throws elsewhere, so expose it only
-          # where it can be built -- flakeExposed also lists freebsd, i686
-          # and friends.
-          // pkgs.lib.optionalAttrs (pkgs.stdenv.isLinux || pkgs.stdenv.isDarwin) {
+          # build closures CI mounts as /nix/store and builds against
+          # offline. Only the installables of the Binaries workflow are
+          # harvested: the trunk and devShell closures (OxCaml, Rocq, ...)
+          # are not what those `nix build`s need. mkSeed supports Linux and
+          # Darwin only and throws elsewhere, so expose it only where it can
+          # be built -- flakeExposed also lists freebsd, i686 and friends.
+          // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.isLinux || pkgs.stdenv.hostPlatform.isDarwin) {
             seed = nix-seed.lib.mkSeed {
               inherit pkgs self;
-              selfFilterName = name: name == "dune";
+              selfFilterName =
+                name:
+                builtins.elem name [
+                  "dune"
+                  "dune-static"
+                  "windows-static"
+                ];
             };
           }
         )
