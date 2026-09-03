@@ -1,0 +1,7 @@
+{
+  "repository": "ghcr.io/roundtablelove/dune/seed",
+  "systems": {
+    "x86_64-linux": "sha256:7f7433a5c311afc196dc12d9dff0f3b9c400ca811e733e5fab0096538216fcbd"
+  },
+  "tag": "d0b4f11bd55f0e019d45851645711a9a94af710e"
+}
